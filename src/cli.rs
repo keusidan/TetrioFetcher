@@ -72,7 +72,11 @@ fn run(args: &[String]) -> Result<(), String> {
         "stats" => to_json(&fetcher.server_stats().map_err(fmt_err)?)?,
         "activity" => to_json(&fetcher.activity().map_err(fmt_err)?)?,
         "user" => to_json(&fetcher.user(need(rest, 0, "user")?).map_err(fmt_err)?)?,
-        "league" => to_json(&fetcher.user_league(need(rest, 0, "user")?).map_err(fmt_err)?)?,
+        "league" => to_json(
+            &fetcher
+                .user_league(need(rest, 0, "user")?)
+                .map_err(fmt_err)?,
+        )?,
         "user-records" => {
             let page = fetcher
                 .user_records(
@@ -106,7 +110,11 @@ fn run(args: &[String]) -> Result<(), String> {
                 .score_flow(need(rest, 0, "user")?, need(rest, 1, "gamemode")?)
                 .map_err(fmt_err)?,
         )?,
-        "raw" => to_json(&fetcher.raw_get(need(rest, 0, "path")?, &[]).map_err(fmt_err)?)?,
+        "raw" => to_json(
+            &fetcher
+                .raw_get(need(rest, 0, "path")?, &[])
+                .map_err(fmt_err)?,
+        )?,
         other => return Err(format!("unknown command `{other}`\n\n{USAGE}")),
     };
 
@@ -174,9 +182,7 @@ fn to_json<T: Serialize>(value: &T) -> Result<String, String> {
 /// Flatten an error into one line a shell user can read and grep.
 fn fmt_err(err: tetrio_fetcher::Error) -> String {
     match &err {
-        tetrio_fetcher::Error::Api {
-            key: Some(key), ..
-        } => {
+        tetrio_fetcher::Error::Api { key: Some(key), .. } => {
             format!("{err} (the API rejected `{key}`; this crate normally repairs that)")
         }
         tetrio_fetcher::Error::Api { .. } => err.to_string(),
