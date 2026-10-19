@@ -3,17 +3,14 @@ name: Wiki
 # Publish wiki content from the repository, without needing the RikkaHub
 # workspace to keep a long-running process alive.
 #
-# Two ways to update the wiki:
-#
-#   1. Automatic - edit any file under `wiki/` in this repository and push to
-#      `main`. Every `*.md` file there is mirrored to a wiki page of the same
-#      name (minus the extension).
-#
-#   2. On demand - run this workflow manually (Actions -> Wiki -> Run workflow)
-#      and give it a page name and Markdown body.
-#
 # The wiki is a separate git repository (`<owner>/<repo>.wiki.git`) that the
-# REST API cannot reach, so the job clones it directly.
+# REST API cannot reach, so the job clones it directly with a token.
+#
+# Updating the wiki:
+#
+#   * Edit any `wiki/*.md` file and push to `main` -> that page is mirrored.
+#   * Delete the file -> the page is deleted from the wiki too.
+#   * Actions -> Wiki -> Run workflow -> write a single page ad hoc.
 
 on:
   push:
@@ -37,6 +34,7 @@ on:
         type: string
         default: "docs(wiki): update from Actions"
 
+# One sync at a time; a later run supersedes an earlier queued one.
 concurrency:
   group: wiki-publish
   cancel-in-progress: false
@@ -50,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Assemble pages to publish
         id: assemble
@@ -62,12 +60,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/wiki-pages
+          : > /tmp/wiki-pages.manifest
 
-          # 1. Mirror anything committed under wiki/
+          # 1. Mirror every committed wiki page, and remember the page names so
+          #    deletions can be propagated below.
           if [ -d wiki ]; then
             while IFS= read -r -d '' file; do
               name="$(basename "$file" .md)"
               cp "$file" "/tmp/wiki-pages/$name.md"
+              printf '%s\n' "$name" >> /tmp/wiki-pages.manifest
               echo "staged from repo: $name"
             done < <(find wiki -maxdepth 1 -type f -name '*.md' -print0)
           fi
@@ -83,6 +84,7 @@ jobs:
               exit 1
             fi
             printf '%s' "$CONTENT" > "/tmp/wiki-pages/${PAGE}.md"
+            printf '%s\n' "$PAGE" >> /tmp/wiki-pages.manifest
             echo "staged from input: $PAGE"
           fi
 
@@ -94,7 +96,7 @@ jobs:
           fi
 
           if [ -z "${WIKI_TOKEN:-}" ]; then
-            echo "::error::Repository secret WIKI_PAT is not set. The wiki repository cannot be reached with the default token."
+            echo "::error::Repository secret WIKI_PAT is not set, so the wiki repository cannot be cloned. Add a classic PAT with the 'repo' scope as WIKI_PAT under Settings -> Secrets and variables -> Actions."
             exit 1
           fi
           echo "message=${MESSAGE:-docs(wiki): update from Actions}" >> "$GITHUB_OUTPUT"
@@ -110,8 +112,9 @@ jobs:
           if ! git clone --depth 1 \
               "https://github.com/${REPOSITORY}.wiki.git" /tmp/wiki 2>/tmp/clone.err; then
             echo "::error::Could not clone ${REPOSITORY}.wiki.git"
-            sed -E 's#(x-access-token:)[^@]+@#\1***@#g' /tmp/clone.err
-            echo "::notice::If the wiki has never had a page, open https://github.com/${REPOSITORY}/wiki and create one, then re-run."
+            # Never echo the token, even if git put it in the message.
+            sed -E 's#(x-access-token:)[^@]+@#\1***@#g' /tmp/clone.err || true
+            echo "::notice::GitHub only creates the wiki repository after the first page is made in the web UI. If the wiki has never had a page, open https://github.com/${REPOSITORY}/wiki and create one, then re-run."
             exit 1
           fi
 
@@ -122,7 +125,22 @@ jobs:
         run: |
           set -euo pipefail
           cp /tmp/wiki-pages/*.md /tmp/wiki/
+
           cd /tmp/wiki
+
+          # Files that exist in the wiki but no longer have a source under
+          # `wiki/` are removed, so deleting a file deletes the page. The
+          # repository's own entry point is never removed.
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            while IFS= read -r -d '' existing; do
+              base="$(basename "$existing" .md)"
+              [ "$base" = "Home" ] && continue
+              if ! grep -Fxq "$base" /tmp/wiki-pages.manifest 2>/dev/null; then
+                echo "removing page with no source: $base"
+                rm -f "$existing"
+              fi
+            done < <(find . -maxdepth 1 -type f -name '*.md' -print0)
+          fi
 
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -134,6 +152,7 @@ jobs:
           fi
 
           git commit -m "$MESSAGE"
+          # Wikis are checked out on `master`; push whatever HEAD points at.
           git push origin HEAD
 
       - name: Summary
@@ -142,8 +161,8 @@ jobs:
           {
             echo "### Wiki publish"
             echo
-            if [ -d /tmp/wiki-pages ]; then
-              echo "Pages staged:"
+            if [ -d /tmp/wiki-pages ] && [ -n "$(find /tmp/wiki-pages -type f -name '*.md' -print -quit)" ]; then
+              echo "Pages published:"
               echo
               find /tmp/wiki-pages -type f -name '*.md' -printf '- `%f`\n' | sort
             else
