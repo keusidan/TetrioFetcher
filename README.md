@@ -1,9 +1,15 @@
 # TetrioFetcher
 
+[![CI](https://github.com/keusidan/TetrioFetcher/actions/workflows/ci.yml/badge.svg)](https://github.com/keusidan/TetrioFetcher/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#動作環境)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **TETR.IO の TETRA CHANNEL API の「壊れやすいところ」を吸収して、きれいな JSON を返す Rust クライアントです。**
 
 > TETR.IO の関係者の方々とは一切関係ありません。このライブラリの問題を TETR.IO 側へ報告しないでください。
 > 利用は [TETRA CHANNEL API](https://tetr.io/about/api) のみを対象とし、ゲーム本体の API は使いません。
+
+📖 **詳しいドキュメントは [Wiki](https://github.com/keusidan/TetrioFetcher/wiki) にあります**（はじめに / API の落とし穴 / アーキテクチャ / エラーハンドリング / テスト戦略 ほか）。
 
 ## なぜ作ったか
 
@@ -119,6 +125,13 @@ error: TETRA CHANNEL API error (404): No such user! | Either you mistyped someth
 - **オフラインでテストできる。** `tests/fixtures` に実レスポンスを保存してあります。
   CI はネットワーク不要、`--ignored` のライブテストだけが API を叩きます。
 
+## 動作環境
+
+- Rust **1.85** 以上（`Cargo.toml` の `rust-version` で宣言。CI の MSRV ジョブが実際に検証しています）
+- Linux / macOS / Windows
+- システムの CA ストアに依存しません（`rustls` + `webpki-roots`）。
+  proot・Android・コンテナなど `/etc/ssl` が怪しい環境でも動きます。
+
 ## テスト
 
 ```console
@@ -130,6 +143,7 @@ cargo test --test live -- --ignored --test-threads=1 --nocapture
 ```
 
 `tests/live.rs` の各テストは、上の表の 1 行に対応しています。
+ライブテストは `#[ignore]` してあるので、CI が TETR.IO に依存することはありません。
 
 ## マナー
 
