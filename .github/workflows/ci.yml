@@ -6,7 +6,7 @@ name: CI
 #
 #   * `cargo test` runs everything offline. Network tests are `#[ignore]`d, so
 #     CI never depends on TETRA CHANNEL being reachable or on its live data.
-#   * The live regression suite is run manually via workflow_dispatch.
+#   * The live regression suite is opt-in through workflow_dispatch.
 #
 # Fixtures under `tests/fixtures` are recorded API responses, so the offline
 # tests still exercise every quirk the crate claims to mask.
@@ -19,6 +19,7 @@ on:
       - "tests/**"
       - "examples/**"
       - "Cargo.toml"
+      - "Cargo.lock"
       - "rustfmt.toml"
       - ".github/workflows/ci.yml"
   pull_request:
@@ -31,8 +32,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Treat every warning as an error, everywhere.
-  RUSTFLAGS: -D warnings
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -60,6 +59,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # `--locked` proves Cargo.lock is in sync with Cargo.toml. If someone
+      # bumps a dependency without regenerating the lockfile, this fails here
+      # rather than silently testing different versions than everyone else.
       - name: Build
         run: cargo build --all-targets --locked
 
@@ -85,6 +87,8 @@ jobs:
       - name: rustfmt
         run: cargo fmt --all --check
 
+      # Warnings are errors for this crate only; a dependency's future warning
+      # should not turn a green build red.
       - name: clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
@@ -104,7 +108,7 @@ jobs:
 
   live:
     name: live API regression
-    # Scheduled or manual only: this hits a real third-party service.
+    # Manual only: this hits a real third-party service.
     if: >-
       github.event_name == 'workflow_dispatch' && github.event.inputs.run_live == 'true'
     runs-on: ubuntu-latest
