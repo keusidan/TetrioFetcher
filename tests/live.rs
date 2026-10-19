@@ -79,7 +79,9 @@ fn genuinely_bad_leaderboard_name_is_rejected_locally() {
 #[ignore = "network"]
 fn bare_gamemode_leaderboard_is_expanded_not_empty() {
     let f = fetcher();
-    let bare = f.records("40l", 3).expect("bare gamemode should be repaired");
+    let bare = f
+        .records("40l", 3)
+        .expect("bare gamemode should be repaired");
     let explicit = f.records("40l_global", 3).expect("explicit id");
 
     assert!(!bare.entries.is_empty(), "upstream returns [] for `40l`");
@@ -126,7 +128,13 @@ fn outrageous_limits_are_clamped_not_rejected() {
 fn unknown_gamemode_never_reaches_the_network() {
     let f = fetcher();
     let err = f.user_records("keusidan", "foo", "top", 5).unwrap_err();
-    assert!(matches!(err, Error::Invalid { field: "gamemode", .. }));
+    assert!(matches!(
+        err,
+        Error::Invalid {
+            field: "gamemode",
+            ..
+        }
+    ));
 }
 
 /// Trap: `200 OK` with `{"success": false}` — a status-code client sees success.
@@ -136,7 +144,9 @@ fn nonexistent_user_is_a_typed_error_not_a_parse_failure() {
     let f = fetcher();
     let err = f.user("thisuserdoesnotexist12345xyzzy").unwrap_err();
     match err {
-        Error::Api { status, ref msg, .. } => {
+        Error::Api {
+            status, ref msg, ..
+        } => {
             assert_eq!(status, 404, "expected the inferred 404, message: {msg}");
             assert!(msg.contains("No such user"), "message was {msg}");
         }
@@ -171,7 +181,9 @@ fn xp_survives_both_integer_and_float_encodings() {
 #[ignore = "network"]
 fn hidden_statistics_become_none_not_negative() {
     let f = fetcher();
-    let page = f.user_leaderboard("league", None, 25).expect("league board");
+    let page = f
+        .user_leaderboard("league", None, 25)
+        .expect("league board");
     for entry in &page.entries {
         if let Some(games) = entry.games_played {
             assert!(games >= 0, "a negative games_played leaked: {games}");
@@ -258,9 +270,18 @@ fn pagination_cursor_round_trips() {
     let first = f.user_leaderboard("league", None, 5).expect("page 1");
     let cursor = first.next_cursor.clone().expect("cursor present");
     let second = f
-        .user_leaderboard_opts("league", None, 5, Some((&cursor, PageDirection::Down)), true)
+        .user_leaderboard_opts(
+            "league",
+            None,
+            5,
+            Some((&cursor, PageDirection::Down)),
+            true,
+        )
         .expect("page 2");
-    assert_eq!(second.entries[0].placement, 1, "placement restarts per page");
+    assert_eq!(
+        second.entries[0].placement, 1,
+        "placement restarts per page"
+    );
     assert!(!second.entries.is_empty());
     let first_ids: Vec<&str> = first.entries.iter().map(|e| e.user_id.as_str()).collect();
     for entry in &second.entries {

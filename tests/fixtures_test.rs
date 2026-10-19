@@ -6,14 +6,12 @@
 
 use serde_json::Value;
 
-use tetrio_fetcher::{
-    jval, unwrap_envelope, Error, Gamemode, PersonalBoard, RecordLeaderboard,
-};
+use tetrio_fetcher::{jval, unwrap_envelope, Error, Gamemode, PersonalBoard, RecordLeaderboard};
 
 fn fixture(name: &str) -> Value {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
-    let raw =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read fixture {path}: {e}"));
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read fixture {path}: {e}"));
     serde_json::from_str(&raw).unwrap_or_else(|e| panic!("fixture {name} is not JSON: {e}"))
 }
 
@@ -78,7 +76,9 @@ fn ranked_league_fixture_keeps_every_field() {
     assert!(standing.games_played > 0);
     assert!(standing.tr.unwrap() > 0.0);
     assert_eq!(standing.rank.as_deref(), Some("x+"));
-    let stats = standing.recent_stats().expect("ranked players have averages");
+    let stats = standing
+        .recent_stats()
+        .expect("ranked players have averages");
     assert!(stats.apm > 0.0 && stats.pps > 0.0 && stats.vs > 0.0);
     // APP is derived, and the formula must match the published definition.
     let app = stats.app().expect("pps is non-zero");
