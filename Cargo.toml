@@ -1,0 +1,33 @@
+[package]
+name = "tetrio-fetcher"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Rust client for the TETR.IO TETRA CHANNEL API that masks its API problems and returns clean, normalized JSON."
+license = "MIT"
+repository = "https://github.com/keusidan/TetrioFetcher"
+readme = "README.md"
+keywords = ["tetrio", "tetra-channel", "api", "client", "tetris"]
+categories = ["api-bindings", "web-programming::http-client"]
+
+[lib]
+name = "tetrio_fetcher"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tfetch"
+path = "src/cli.rs"
+
+[dependencies]
+serde          = { version = "1.0.229", features = ["derive"] }
+serde_json     = "1.0.154"
+ureq           = { version = "3.4.2", default-features = false, features = ["rustls", "gzip", "json"] }
+thiserror      = "2.0"
+
+[dev-dependencies]
+pretty_assertions = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
