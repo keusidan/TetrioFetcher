@@ -1,0 +1,122 @@
+name: CI
+
+# Build, test and lint the crate.
+#
+# The suite is split in two on purpose:
+#
+#   * `cargo test` runs everything offline. Network tests are `#[ignore]`d, so
+#     CI never depends on TETRA CHANNEL being reachable or on its live data.
+#   * The live regression suite is run manually via workflow_dispatch.
+#
+# Fixtures under `tests/fixtures` are recorded API responses, so the offline
+# tests still exercise every quirk the crate claims to mask.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "examples/**"
+      - "Cargo.toml"
+      - "rustfmt.toml"
+      - ".github/workflows/ci.yml"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_live:
+        description: "Also run the live API regression suite"
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Treat every warning as an error, everywhere.
+  RUSTFLAGS: -D warnings
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test / ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+          - name: macos
+            os: macos-latest
+          - name: windows
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --all-targets --locked
+
+      - name: Test (offline)
+        run: cargo test --locked
+
+      - name: Doc tests
+        run: cargo test --doc --locked
+
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+      - name: clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+  msrv:
+    name: MSRV 1.85
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@1.85.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build at the declared minimum
+        run: cargo build --all-targets --locked
+
+  live:
+    name: live API regression
+    # Scheduled or manual only: this hits a real third-party service.
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.event.inputs.run_live == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run the live suite
+        # One thread: the client throttles itself to about one request per
+        # second, which is what TETRA CHANNEL asks for.
+        run: cargo test --test live --locked -- --ignored --test-threads=1 --nocapture
