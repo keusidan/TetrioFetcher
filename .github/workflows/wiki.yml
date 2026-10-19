@@ -1,0 +1,152 @@
+name: Wiki
+
+# Publish wiki content from the repository, without needing the RikkaHub
+# workspace to keep a long-running process alive.
+#
+# Two ways to update the wiki:
+#
+#   1. Automatic - edit any file under `wiki/` in this repository and push to
+#      `main`. Every `*.md` file there is mirrored to a wiki page of the same
+#      name (minus the extension).
+#
+#   2. On demand - run this workflow manually (Actions -> Wiki -> Run workflow)
+#      and give it a page name and Markdown body.
+#
+# The wiki is a separate git repository (`<owner>/<repo>.wiki.git`) that the
+# REST API cannot reach, so the job clones it directly.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+    inputs:
+      page:
+        description: "Page name to write (e.g. FAQ). Leave empty to only sync wiki/."
+        required: false
+        type: string
+      content:
+        description: "Full Markdown body for the page. Required when page is set."
+        required: false
+        type: string
+      message:
+        description: "Commit message."
+        required: false
+        type: string
+        default: "docs(wiki): update from Actions"
+
+concurrency:
+  group: wiki-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish wiki pages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Assemble pages to publish
+        id: assemble
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_PAT }}
+          PAGE: ${{ inputs.page }}
+          CONTENT: ${{ inputs.content }}
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/wiki-pages
+
+          # 1. Mirror anything committed under wiki/
+          if [ -d wiki ]; then
+            while IFS= read -r -d '' file; do
+              name="$(basename "$file" .md)"
+              cp "$file" "/tmp/wiki-pages/$name.md"
+              echo "staged from repo: $name"
+            done < <(find wiki -maxdepth 1 -type f -name '*.md' -print0)
+          fi
+
+          # 2. Write the ad-hoc page, if one was supplied.
+          if [ -n "${PAGE:-}" ]; then
+            if [ -z "${CONTENT:-}" ]; then
+              echo "::error::Input 'page' was given but 'content' is empty."
+              exit 1
+            fi
+            if ! printf '%s' "$PAGE" | grep -Eq '^[A-Za-z0-9._() -]+$'; then
+              echo "::error::Page name contains unsupported characters: $PAGE"
+              exit 1
+            fi
+            printf '%s' "$CONTENT" > "/tmp/wiki-pages/${PAGE}.md"
+            echo "staged from input: $PAGE"
+          fi
+
+          count="$(find /tmp/wiki-pages -type f -name '*.md' | wc -l)"
+          echo "pages=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -eq 0 ]; then
+            echo "Nothing to publish."
+            exit 0
+          fi
+
+          if [ -z "${WIKI_TOKEN:-}" ]; then
+            echo "::error::Repository secret WIKI_PAT is not set. The wiki repository cannot be reached with the default token."
+            exit 1
+          fi
+          echo "message=${MESSAGE:-docs(wiki): update from Actions}" >> "$GITHUB_OUTPUT"
+
+      - name: Clone the wiki repository
+        if: steps.assemble.outputs.pages != '0'
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_PAT }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${WIKI_TOKEN}@github.com/".insteadOf "https://github.com/"
+          if ! git clone --depth 1 \
+              "https://github.com/${REPOSITORY}.wiki.git" /tmp/wiki 2>/tmp/clone.err; then
+            echo "::error::Could not clone ${REPOSITORY}.wiki.git"
+            sed -E 's#(x-access-token:)[^@]+@#\1***@#g' /tmp/clone.err
+            echo "::notice::If the wiki has never had a page, open https://github.com/${REPOSITORY}/wiki and create one, then re-run."
+            exit 1
+          fi
+
+      - name: Copy pages, commit and push
+        if: steps.assemble.outputs.pages != '0'
+        env:
+          MESSAGE: ${{ steps.assemble.outputs.message }}
+        run: |
+          set -euo pipefail
+          cp /tmp/wiki-pages/*.md /tmp/wiki/
+          cd /tmp/wiki
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add --all
+          if git diff --cached --quiet; then
+            echo "Wiki already up to date; nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "$MESSAGE"
+          git push origin HEAD
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Wiki publish"
+            echo
+            if [ -d /tmp/wiki-pages ]; then
+              echo "Pages staged:"
+              echo
+              find /tmp/wiki-pages -type f -name '*.md' -printf '- `%f`\n' | sort
+            else
+              echo "No pages were staged."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
