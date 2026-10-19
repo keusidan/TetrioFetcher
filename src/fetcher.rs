@@ -142,7 +142,9 @@ impl Fetcher {
     /// `/users/:user/summaries/league`
     pub fn user_league(&self, user: &str) -> Result<LeagueStanding> {
         let id = routes::normalize_user(user)?;
-        let data = self.transport.get(&format!("users/{id}/summaries/league"))?;
+        let data = self
+            .transport
+            .get(&format!("users/{id}/summaries/league"))?;
         Ok(parse::parse_league_standing(&data))
     }
 
@@ -401,10 +403,8 @@ impl Fetcher {
     /// them. The result is already normalized in the sense that errors are
     /// typed and HTML pages are rejected.
     pub fn raw_get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
-        let owned: Vec<(&str, String)> = query
-            .iter()
-            .map(|(k, v)| (*k, (*v).to_string()))
-            .collect();
+        let owned: Vec<(&str, String)> =
+            query.iter().map(|(k, v)| (*k, (*v).to_string())).collect();
         self.transport.get_with_query(path, &owned)
     }
 }
