@@ -1,8 +1,0 @@
-    /// `/users/:user/summaries/league`
-    pub fn user_league(&self, user: &str) -> Result<LeagueStanding> {
-        let id = routes::normalize_user(user)?;
-        let data = self
-            .transport
-            .get(&format!("users/{id}/summaries/league"))?;
-        Ok(parse::parse_league_standing(&data))
-    }
